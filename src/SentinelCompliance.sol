@@ -1,18 +1,37 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+pragma solidity 0.8.17;
 
 import "@erc-3643/contracts/compliance/modular/IModularCompliance.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@erc-3643/contracts/token/IToken.sol";
+
+interface ISignatureRegistry {
+    function getScore(address) external view returns (uint256);
+}
+
+interface IVerifier {
+    function verifyProof(uint[2] memory a, uint[2][2] memory b, uint[2] memory c, uint[1] memory input) external view returns (bool);
+}
 
 contract SentinelCompliance is IModularCompliance, Ownable {
 
-    // IoT STATE
-    address public oracleAddress;
-    mapping(address => bool) public isFrozen;
     address public _tokenBound;
+    address public oracleAddress;
+    address public verifierAddress;
 
-    event LicenseFrozen(address indexed franchise, string reason);
-    event LicenseRestored(address indexed franchise);
+    mapping(address => bool) public isFrozen;
+    mapping(address => uint256) public s_violationCount;
+    mapping(uint256 => bool) public s_usedNullifiers;
+
+    uint256 public constant PENALTY_PER_STRIKE = 50; 
+    uint256 public constant MIN_SCORE_TO_SURVIVE = 300;
+    uint256 public constant SCORE_FOR_UNLIMITED = 700;    
+
+    event AssetFrozen(address indexed user, string reason);
+    event StrikeReceived(address indexed user, uint256 newPenaltyCount);
+    event OracleUpdated(address newOracle);
+
+    error InvalidAddress();
 
     modifier onlyOracle() {
         require(msg.sender == oracleAddress, "Only Oracle");
@@ -24,29 +43,66 @@ contract SentinelCompliance is IModularCompliance, Ownable {
         _;
     }
 
-    constructor(address _oracle) {
+    constructor(address _oracle, address _verifier) {
+        if (_oracle == address(0) || _verifier == address(0)) {
+            revert InvalidAddress();
+        }
         oracleAddress = _oracle;
+        verifierAddress = _verifier;
     }
 
-    // --- IoT LOGIC ---
-    
-    function updateFranchiseStatus(address _franchise, bool _status, string memory _reason) external onlyOracle {
-        isFrozen[_franchise] = _status;
-        if (_status) {
-            emit LicenseFrozen(_franchise, _reason);
-        } else {
-            emit LicenseRestored(_franchise);
+    function reportViolationZK(
+        address _badActor,
+        uint[2] memory a,
+        uint[2][2] memory b,
+        uint[2] memory c,
+        uint[1] memory input
+    ) external {
+        require(IVerifier(verifierAddress).verifyProof(a, b, c, input), "Invalid ZK Proof");
+        require(!s_usedNullifiers[input[0]], "Receipt already used");
+        s_usedNullifiers[input[0]] = true;
+
+        s_violationCount[_badActor]++;
+        emit StrikeReceived(_badActor, s_violationCount[_badActor]);
+    }
+
+    function updateFranchiseStatus(address _target, bool _status) external onlyOracle {
+        isFrozen[_target] = _status;
+        if(_status) emit AssetFrozen(_target, "Chainlink IoT Triggered");
+    }
+
+    function calculateEffectiveScore(address _user) public view returns (uint256){
+        address registry= address(IToken(_tokenBound).identityRegistry());
+        try ISignatureRegistry(registry).getScore(_user) returns (uint256 base) {
+            uint256 penalty = s_violationCount[_user] * PENALTY_PER_STRIKE;
+            
+            if (penalty >= base) {
+                return 0;
+            }
+            return base - penalty;
+        } catch {
+            return 0;
         }
     }
 
-    function canTransfer(address _from, address _to, uint256 /* value */) external view override returns (bool) {
-        if (isFrozen[_from]) return false; // Block frozen senders
-        if (isFrozen[_to]) return false;   // Block frozen receivers
+    function canTransfer(address _from, address _to, uint256 _value) external view override returns (bool) {
+        if (isFrozen[_from]) return false;
+
+        if (calculateEffectiveScore(_from) < MIN_SCORE_TO_SURVIVE) return false;
+
+        uint256 receiverScore = calculateEffectiveScore(_to);
+        if (receiverScore < MIN_SCORE_TO_SURVIVE) return false;    
+
+        if (receiverScore < SCORE_FOR_UNLIMITED) {
+            uint256 currentBalance = IToken(_tokenBound).balanceOf(_to);
+            if (currentBalance + _value > 1) return false; 
+        }
+
         return true;
     }
 
-    // --- BOILERPLATE (Required by Token.sol) ---
     function bindToken(address _token) external override {
+        if(_token == address(0)) { revert InvalidAddress(); }
         _tokenBound = _token;
         emit TokenBound(_token);
     }
@@ -56,7 +112,6 @@ contract SentinelCompliance is IModularCompliance, Ownable {
         emit TokenUnbound(_token);
     }
 
-    // Empty hooks to satisfy interface
     function transferred(address, address, uint256) external override onlyToken {}
     function created(address, uint256) external override onlyToken {}
     function destroyed(address, uint256) external override onlyToken {}
@@ -66,4 +121,10 @@ contract SentinelCompliance is IModularCompliance, Ownable {
     function isModuleBound(address) external view override returns (bool) { return false; }
     function getModules() external view override returns (address[] memory) { return new address[](0); }
     function getTokenBound() external view override returns (address) { return _tokenBound; }
+    
+    function setOracle(address _newOracle) external onlyOwner {
+        if (_newOracle == address(0)) { revert InvalidAddress(); } 
+        oracleAddress = _newOracle;
+        emit OracleUpdated(_newOracle);
+    }
 }
