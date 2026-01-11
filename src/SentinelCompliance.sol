@@ -86,13 +86,22 @@ contract SentinelCompliance is IModularCompliance, Ownable {
     }
 
     function canTransfer(address _from, address _to, uint256 _value) external view override returns (bool) {
-        if (isFrozen[_from]) return false;
+        // --- FIX: ALLOW MINTING (Ignore Sender if 0x0) ---
+        if (_from != address(0)) {
+            // A. Chainlink Override
+            if (isFrozen[_from]) return false;
 
-        if (calculateEffectiveScore(_from) < MIN_SCORE_TO_SURVIVE) return false;
+            // B. Check SENDER's Score
+            if (calculateEffectiveScore(_from) < MIN_SCORE_TO_SURVIVE) return false;
+        }
 
+        // --- CHECK RECEIVER (Always check this) ---
+        
+        // C. Check RECEIVER's Score
         uint256 receiverScore = calculateEffectiveScore(_to);
         if (receiverScore < MIN_SCORE_TO_SURVIVE) return false;    
 
+        // D. Cap Check for Average Users
         if (receiverScore < SCORE_FOR_UNLIMITED) {
             uint256 currentBalance = IToken(_tokenBound).balanceOf(_to);
             if (currentBalance + _value > 1) return false; 
