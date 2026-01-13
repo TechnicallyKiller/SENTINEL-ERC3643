@@ -10,7 +10,7 @@ interface ISignatureRegistry {
 }
 
 interface IVerifier {
-    function verifyProof(uint[2] memory a, uint[2][2] memory b, uint[2] memory c, uint[1] memory input) external view returns (bool);
+    function verifyProof(uint[2] memory a, uint[2][2] memory b, uint[2] memory c, uint[2] memory input) external view returns (bool);
 }
 
 contract SentinelCompliance is IModularCompliance, Ownable {
@@ -56,7 +56,7 @@ contract SentinelCompliance is IModularCompliance, Ownable {
         uint[2] memory a,
         uint[2][2] memory b,
         uint[2] memory c,
-        uint[1] memory input
+        uint[2] memory input
     ) external {
         require(IVerifier(verifierAddress).verifyProof(a, b, c, input), "Invalid ZK Proof");
         require(!s_usedNullifiers[input[0]], "Receipt already used");

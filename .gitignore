@@ -12,3 +12,13 @@ docs/
 
 # Dotenv file
 .env
+
+src/Verifier.sol
+circuits/whistleblower_js/
+circuits/srs_final_0000.zkey
+circuits/srs_final_0001.zkey
+circuits/srs_final_0002.zkey
+circuits/srs_final_0003.zkey
+circuits/whistleblower_cpp/
+
+frontend/public/zk/

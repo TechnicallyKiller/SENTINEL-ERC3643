@@ -5,7 +5,7 @@ import "forge-std/Script.sol";
 import "../src/SentinelToken.sol";
 import "../src/SignatureRegistry.sol";
 import "../src/SentinelCompliance.sol";
-import "../src/MockVerifier.sol"; // Ensure you have this file in src/
+import "../src/Verifier.sol"; // Ensure you have this file in src/
 
 contract DeploySentinel is Script {
     function run() external {
@@ -20,7 +20,7 @@ contract DeploySentinel is Script {
         // ----------------------------------------
         
         // A. Deploy Verifier (Mock for now)
-        MockVerifier verifier = new MockVerifier();
+        Groth16Verifier verifier = new Groth16Verifier();
         console.log("Verifier deployed at:", address(verifier));
 
         // B. Deploy Registry
