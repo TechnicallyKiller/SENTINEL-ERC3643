@@ -117,7 +117,7 @@ toast.success("Report Verified! Awaiting Auditor Payout.", { id: toastId });
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 py-12 px-4 sm:px-6 lg:px-8 font-sans selection:bg-red-500/30">
+    <div className="min-h-screen bg-slate-950 scanline text-slate-200 py-12 px-4 sm:px-6 lg:px-8 font-sans selection:bg-red-500/30">
       <Toaster position="top-right" toastOptions={{ style: { background: '#1e293b', color: '#fff', border: '1px solid #334155' } }} />
       
       <div className="max-w-xl mx-auto space-y-8">

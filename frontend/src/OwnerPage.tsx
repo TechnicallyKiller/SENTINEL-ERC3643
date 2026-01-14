@@ -140,7 +140,7 @@ export default function OwnerPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 p-6 md:p-12 font-sans selection:bg-blue-500/30">
+    <div className="min-h-screen bg-slate-950 scanline text-slate-200 p-6 md:p-12 font-sans selection:bg-blue-500/30">
       <Toaster position="top-right" toastOptions={{ style: { background: '#1e293b', color: '#fff', border: '1px solid #334155' } }} />
       
       <header className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center mb-12 gap-6">

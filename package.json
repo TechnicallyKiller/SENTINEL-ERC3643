@@ -22,5 +22,6 @@
   "homepage": "https://github.com/TechnicallyKiller/SENTINEL-ERC3643#readme",
   "dependencies": {
     "circomlib": "^2.0.5"
-  }
+  },
+  "devDependencies": {}
 }

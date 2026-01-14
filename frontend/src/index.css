@@ -65,6 +65,31 @@ body {
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
   }
+  .scanline::before {
+  content: " ";
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(18, 16, 16, 0) 50%,
+    rgba(0, 0, 0, 0.25) 50%
+  );
+  background-size: 100% 4px;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0.6;
+}
+}
+body {
+  cursor: crosshair;
+}
+
+a, button {
+  cursor: cell !important; /* or 'text' for a terminal feel */
 }
 
 @layer base {
@@ -74,4 +99,19 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+@keyframes glitch {
+  0% { transform: translate(0); }
+  20% { transform: translate(-2px, 2px); }
+  40% { transform: translate(-2px, -2px); }
+  60% { transform: translate(2px, 2px); }
+  80% { transform: translate(2px, -2px); }
+  100% { transform: translate(0); }
+}
+
+.hover-glitch:hover {
+  animation: glitch 0.3s cubic-bezier(.25, .46, .45, .94) both infinite;
+  border-color: rgba(239, 68, 68, 0.5); /* Red border tint */
+  box-shadow: 2px 2px 0px rgba(239, 68, 68, 0.4), -2px -2px 0px rgba(0, 255, 255, 0.4);
 }

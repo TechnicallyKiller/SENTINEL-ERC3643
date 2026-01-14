@@ -5,43 +5,46 @@ import "forge-std/Script.sol";
 import "../src/SentinelToken.sol";
 import "../src/SignatureRegistry.sol";
 import "../src/SentinelCompliance.sol";
-import "../src/Verifier.sol"; // Ensure you have this file in src/
+import "../src/Verifier.sol"; 
+// REMOVED: import "../src/SentinelIoTAdapter.sol"; <--- Caused the version crash
 
 contract DeploySentinel is Script {
     function run() external {
-        // 1. Setup Environment
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
         
         vm.startBroadcast(deployerPrivateKey);
 
-        // ----------------------------------------
-        // Step 1: Deploy Dependencies
-        // ----------------------------------------
-        
-        // A. Deploy Verifier (Mock for now)
+        console.log("-----------------------------------------");
+        console.log(" STARTING HYBRID DEPLOYMENT");
+        console.log("-----------------------------------------");
+
+        // 1. Deploy Core (0.8.17 Compatible)
         Groth16Verifier verifier = new Groth16Verifier();
-        console.log("Verifier deployed at:", address(verifier));
+        console.log(" Verifier deployed:", address(verifier));
 
-        // B. Deploy Registry
         SignatureRegistry registry = new SignatureRegistry();
-        console.log("Registry deployed at:", address(registry));
+        console.log(" Registry deployed:", address(registry));
 
-        // C. Deploy Compliance
-        // Note: We set 'deployer' as the initial Oracle so you can test it manually
         SentinelCompliance compliance = new SentinelCompliance(deployer, address(verifier));
-        console.log("Compliance deployed at:", address(compliance));
+        console.log(" Compliance deployed:", address(compliance));
 
-        // ----------------------------------------
-        // Step 2: Deploy & Configure Token
-        // ----------------------------------------
+        // 2. Deploy IoT Adapter (0.8.19) - USING CHEATCODE
+        address router = 0xf9B8fc078197181C841c296C876945aaa425B278;
+        bytes32 donId = 0x66756e2d626173652d7365706f6c69612d310000000000000000000000000000;
+        uint64 subId = 548; 
 
-        // D. Deploy Token
+   
+        bytes memory args = abi.encode(router, donId, subId, address(compliance));
+        
+       
+        address adapter = deployCode("SentinelIoTAdapter", args);
+        console.log(" IoT Adapter deployed:", adapter);
+
+        // 3. Deploy Token
         SentinelToken token = new SentinelToken();
-        console.log("Token deployed at:", address(token));
+        console.log(" Token deployed:", address(token));
 
-        // E. Initialize Token
-        // _onchainID is set to 'deployer' as a placeholder
         token.init(
             address(registry),
             address(compliance),
@@ -50,15 +53,15 @@ contract DeploySentinel is Script {
             0, 
             deployer 
         );
-        console.log("Token Initialized.");
+        console.log(" Token Initialized");
 
-        // F. Add Deployer as Agent (To allow minting)
+        // 4. Wiring
         token.addAgent(deployer);
-        console.log("Agent Added.");
-
-        // G. Unpause (Open for business)
         token.unpause();
-        console.log("Token Unpaused.");
+        
+        compliance.bindToken(address(token));
+        compliance.setOracle(adapter); // Link to the cheatcode-deployed address
+        console.log(" Wiring Complete");
 
         vm.stopBroadcast();
     }
