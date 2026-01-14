@@ -1,5 +1,24 @@
 {
+  "headers": [
+    {
+      "source": "/zk/(.*).wasm",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/wasm"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    }
+  ],
   "rewrites": [
+    {
+      "source": "/zk/(.*)",
+      "destination": "/zk/$1"
+    },
     {
       "source": "/(.*)",
       "destination": "/index.html"

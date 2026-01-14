@@ -7,26 +7,37 @@ export type ZKProofPayload = {
   input: [string, string];
 };
 
-// Update function signature to accept a logger
 export async function generateProof(
   secretInput: string, 
-  logger: (msg: string) => void // <--- NEW PARAMETER
+  logger: (msg: string) => void 
 ): Promise<ZKProofPayload> {
   
-  logger("🔐 ZK WORKER: Starting calculation...");
+  logger("🔐 ZK WORKER: Initializing...");
   
-  const wasmPath = "/zk/whistleblower.wasm";
-  const zkeyPath = "/zk/whistleblower_final.zkey";
+  // 1. Add a timestamp cache-buster to force Vercel to fetch the actual binary
+  // This prevents the browser from using the cached HTML 404 page
+  const cb = `?v=${Date.now()}`;
+  const wasmPath = `/zk/whistleblower.wasm${cb}`;
+  const zkeyPath = `/zk/whistleblower_final.zkey${cb}`;
 
   try {
+    // 2. Pre-flight check: Verify the WASM is actually binary before handing it to snarkjs
+    // This catches the "magic word" error before it crashes the compiler
+    const response = await fetch(wasmPath);
+    const contentType = response.headers.get("content-type");
+    
+    if (contentType?.includes("text/html")) {
+      throw new Error("SERVER_CONFIG_ERROR: Received HTML instead of WASM. Check vercel.json rewrites.");
+    }
+
     const inputs = {
       secret: secretInput,  
       reportId: "404" 
     };
 
-    logger(`⚙️ INPUTS: secret=****${secretInput.slice(-2)}, reportId=404`);
+    logger(`⚙️ COMPUTING: secret=****${secretInput.slice(-2)}`);
 
-    // Run Calculation
+    // 3. Run Groth16 Prover
     const { proof, publicSignals } = await snarkjs.groth16.fullProve(
       inputs, 
       wasmPath, 
@@ -34,8 +45,7 @@ export async function generateProof(
     );
 
     logger("✅ ZK PROOF GENERATED SUCCESSFULLY");
-    // Log the first few chars of the proof to look cool
-    logger(`📦 PROOF HASH: ${proof.pi_a[0].slice(0,15)}...`);
+    logger(`📦 PROOF_A[0]: ${proof.pi_a[0].slice(0,10)}...`);
 
     return {
       a: [proof.pi_a[0], proof.pi_a[1]],
