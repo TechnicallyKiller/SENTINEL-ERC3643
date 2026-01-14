@@ -55,7 +55,7 @@ function LandingPage() {
           </Link>
 
           {/* OWNER */}
-          <Link to="/owner" className="group relative bg-slate-900/50 backdrop-blur-sm border border-slate-800 p-8 rounded-3xl hover:border-blue-500/50 transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_0_40px_rgba(59,130,246,0.15)]">
+          <Link to="/admin" className="group relative bg-slate-900/50 backdrop-blur-sm border border-slate-800 p-8 rounded-3xl hover:border-blue-500/50 transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_0_40px_rgba(59,130,246,0.15)]">
             <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-3xl" />
             <Building2 className="w-12 h-12 text-slate-700 group-hover:text-blue-500 transition-colors mb-6" />
             <h3 className="text-2xl font-bold text-white mb-2">Franchise Owner</h3>
