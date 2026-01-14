@@ -15,33 +15,23 @@ export default defineConfig({
       protocolImports: true,
     }),
   ],
-  // 1. Explicitly tell Vite to treat these as static assets
+  // Keep these so Vite recognizes the ZK files
   assetsInclude: ['**/*.wasm', '**/*.zkey'], 
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  // 2. Optimization: Exclude snarkjs from dependency pre-bundling if it causes issues
   optimizeDeps: {
     exclude: ['snarkjs']
   },
   define: {
+    // Standardize global for browser compatibility
     'global': 'globalThis',
   },
-  // 3. Ensure the build output directory is correct for Vercel
   build: {
     outDir: 'dist',
-    rollupOptions: {
-      output: {
-        // This ensures wasm files keep their names and don't get hashed incorrectly
-        assetFileNames: (assetInfo) => {
-          if (assetInfo.name?.endsWith('.wasm')) {
-            return 'zk/[name][ext]';
-          }
-          return 'assets/[name]-[hash][ext]';
-        }
-      }
-    }
+    // ❌ REMOVED: rollupOptions.output.assetFileNames
+    // This was likely breaking your CSS pathing on Vercel
   }
 })
