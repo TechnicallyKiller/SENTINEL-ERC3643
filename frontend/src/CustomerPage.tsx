@@ -6,6 +6,9 @@ import toast, { Toaster } from 'react-hot-toast';
 import { ShieldAlert, Receipt, Search, AlertTriangle, Lock } from 'lucide-react';
 import { generateProof } from './lib/zk'; 
 
+// 1. Import Reown Hooks
+import { useAppKitAccount, useAppKitProvider } from '@reown/appkit/react';
+
 interface Restaurant {
   id: number;
   name: string;
@@ -15,39 +18,16 @@ interface Restaurant {
 }
 
 export default function CustomerPage() {
+  // 2. Reactive Wallet State
+  const { address, isConnected } = useAppKitAccount();
+  const { walletProvider } = useAppKitProvider('eip155');
+
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [selectedWallet, setSelectedWallet] = useState("");
   const [receiptId, setReceiptId] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (window.ethereum) {
-      const handleAccountsChanged = (accounts: string[]) => {
-        console.log("Wallet Switched:", accounts[0]);
-        // Reload page to clear old state/cache and re-connect cleanly
-        window.location.reload();
-      };
-
-      const handleChainChanged = () => {
-        window.location.reload();
-      };
-
-      // Listen for events
-      window.ethereum.on('accountsChanged', handleAccountsChanged);
-      window.ethereum.on('chainChanged', handleChainChanged);
-
-      // Cleanup listeners on unmount
-      return () => {
-        if (window.ethereum.removeListener) {
-          window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-          window.ethereum.removeListener('chainChanged', handleChainChanged);
-        }
-      };
-    }
-  }, []);
-
-  
-
+  // Fetch Directory on Mount
   useEffect(() => {
     fetchDirectory();
     const channel = supabase
@@ -65,6 +45,7 @@ export default function CustomerPage() {
   };
 
   const submitReport = async () => {
+    if (!isConnected || !walletProvider) return toast.error("Please connect your uplink first.");
     if (!receiptId) return toast.error("Receipt ID is required");
     if (!selectedWallet) return toast.error("Select a venue");
 
@@ -72,15 +53,14 @@ export default function CustomerPage() {
     const toastId = toast.loading("Initializing ZK Worker...");
 
     try {
-      if (!window.ethereum) throw new Error("No Wallet Found");
-
       // 1. GENERATE PROOF
       const zkData = await generateProof(receiptId, (msg) => toast.loading(msg, { id: toastId }));
 
       // 2. SUBMIT TO CHAIN
       toast.loading("Proof Verified! Staking 0.001 ETH...", { id: toastId });
       
-      const provider = new BrowserProvider(window.ethereum);
+      // Use the walletProvider from Reown
+      const provider = new BrowserProvider(walletProvider as any);
       const signer = await provider.getSigner();
       const compliance = new Contract(SENTINEL_ADDRESSES.compliance, SENTINEL_ABIS.compliance, signer);
 
@@ -92,19 +72,17 @@ export default function CustomerPage() {
       
       toast.loading(`Verifying On-Chain: ${tx.hash.slice(0,6)}...`, { id: toastId });
       await tx.wait();
-      toast.loading("Indexing Report...", { id: toastId });
-
-// SAVE TO DB FOR AUDITOR REVIEW
-await supabase.from('reports').insert([{
-  franchise_wallet: selectedWallet,
-  reporter_wallet: (await signer.getAddress()), // The user's address
-  receipt_id: receiptId,
-  tx_hash: tx.hash,
-  status: 'PENDING'
-}]);
-
-toast.success("Report Verified! Awaiting Auditor Payout.", { id: toastId });
       
+      // SAVE TO DB FOR AUDITOR REVIEW
+      await supabase.from('reports').insert([{
+        franchise_wallet: selectedWallet,
+        reporter_wallet: address, 
+        receipt_id: receiptId,
+        tx_hash: tx.hash,
+        status: 'PENDING'
+      }]);
+
+      toast.success("Report Verified! Awaiting Auditor Payout.", { id: toastId });
       setReceiptId("");
 
     } catch (e: any) {
@@ -118,7 +96,7 @@ toast.success("Report Verified! Awaiting Auditor Payout.", { id: toastId });
 
   return (
     <div className="min-h-screen bg-slate-950 scanline text-slate-200 py-12 px-4 sm:px-6 lg:px-8 font-sans selection:bg-red-500/30">
-      <Toaster position="top-right" toastOptions={{ style: { background: '#1e293b', color: '#fff', border: '1px solid #334155' } }} />
+      <Toaster position="top-right" />
       
       <div className="max-w-xl mx-auto space-y-8">
         
@@ -135,21 +113,28 @@ toast.success("Report Verified! Awaiting Auditor Payout.", { id: toastId });
           </p>
         </div>
 
-        <div className="mt-4 flex justify-center">
-  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs font-mono text-slate-400">
-    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-    {window.ethereum?.selectedAddress 
-      ? `Connected: ${window.ethereum.selectedAddress.slice(0,6)}...${window.ethereum.selectedAddress.slice(-4)}`
-      : "Wallet Not Connected"}
-  </div>
-</div>
+        {/* CONNECTION STATUS BAR */}
+        <div className="flex justify-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 border border-slate-800 text-[10px] font-mono tracking-widest uppercase shadow-xl">
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-red-500 animate-pulse'}`}></div>
+            {isConnected 
+              ? `UPLINK: ${address?.slice(0,6)}...${address?.slice(-4)}`
+              : "CONNECTION_REQUIRED"}
+          </div>
+        </div>
 
         {/* MAIN CARD */}
-        <div className="bg-slate-900/50 backdrop-blur-xl py-8 px-6 shadow-2xl rounded-3xl border border-slate-800 sm:px-10 relative overflow-hidden">
-            {/* Glow Effect */}
+        <div className="bg-slate-900/50 backdrop-blur-xl py-8 px-6 shadow-2xl rounded-3xl border border-slate-800 sm:px-10 relative overflow-hidden transition-all duration-500">
+            {/* Logic Gate: Dim UI if not connected */}
+            {!isConnected && (
+              <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+                 <appkit-button /> 
+              </div>
+            )}
+
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-600 via-orange-500 to-red-600 opacity-50"></div>
 
-            <div className="space-y-6">
+            <div className={`space-y-6 ${!isConnected && 'blur-sm grayscale'}`}>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Target Franchise</label>
                 <div className="relative group">
@@ -185,7 +170,7 @@ toast.success("Report Verified! Awaiting Auditor Payout.", { id: toastId });
 
               <button
                 onClick={submitReport}
-                disabled={loading || !selectedWallet}
+                disabled={loading || !selectedWallet || !isConnected}
                 className={`w-full flex justify-center items-center gap-2 py-5 px-4 border border-transparent rounded-xl shadow-lg text-sm font-bold text-white transition-all transform hover:scale-[1.02] active:scale-[0.98] mt-8
                   ${loading 
                     ? 'bg-slate-800 cursor-not-allowed text-slate-500' 
@@ -194,7 +179,7 @@ toast.success("Report Verified! Awaiting Auditor Payout.", { id: toastId });
               >
                 {loading ? (
                    <span className="flex items-center gap-2">
-                     <Lock className="w-4 h-4 animate-pulse" /> Generating ZK Proof...
+                     <Lock className="w-4 h-4 animate-pulse" /> GENERATING_ZK_PROOF...
                    </span>
                 ) : (
                   "Generate ZK Proof & Report"

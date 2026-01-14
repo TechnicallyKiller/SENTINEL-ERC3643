@@ -1,13 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserProvider, Contract } from 'ethers';
 import { SENTINEL_ADDRESSES, SENTINEL_ABIS } from './configs/contracts';
 import { SENSOR_SOURCE_CODE } from './configs/sensorScript';
 import { supabase } from './configs/supabaseClient';
 import toast, { Toaster } from 'react-hot-toast';
-import { Building2, Signal, ShieldCheck, Server, Radio } from 'lucide-react';
+import { Building2, Signal, ShieldCheck, Server, Radio, Zap, LogOut } from 'lucide-react';
+
+// 1. Import Reown Hooks
+import { useAppKitAccount, useAppKitProvider, useAppKit } from '@reown/appkit/react';
 
 export default function OwnerPage() {
-  const [account, setAccount] = useState<string | null>(null);
+  // 2. Use Reown reactive state
+  const { address, isConnected } = useAppKitAccount();
+  const { walletProvider } = useAppKitProvider('eip155');
+  const { open } = useAppKit();
+
   const [score, setScore] = useState(0);
   const [strikes, setStrikes] = useState(0);
   const [isFrozen, setIsFrozen] = useState(false);
@@ -16,132 +23,130 @@ export default function OwnerPage() {
   const [formName, setFormName] = useState("");
   const [formLocation, setFormLocation] = useState("");
 
+  // 3. Effect to fetch data when provider or account changes
   useEffect(() => {
-    if (window.ethereum) {
-      // Listen for account changes
-      window.ethereum.on('accountsChanged', (accounts: string[]) => {
-        if (accounts.length > 0) {
-          console.log("Wallet Switched:", accounts[0]);
-          setAccount(accounts[0]);
-          
-          // CRITICAL: Reload the page or re-fetch data to update the UI
-          // For a portfolio, reloading is the safest way to ensure no stale data remains
-          window.location.reload(); 
-        } else {
-          setAccount(null); // User disconnected
-          toast.error("Wallet Disconnected");
-        }
-      });
-
-      // Listen for chain changes (e.g., wrong network)
-      window.ethereum.on('chainChanged', () => {
-        window.location.reload();
-      });
+    if (isConnected && walletProvider && address) {
+      const provider = new BrowserProvider(walletProvider as any);
+      refreshChainStats(address, provider);
+      fetchDbRecord(address);
     }
+  }, [isConnected, walletProvider, address]);
 
-    // Cleanup listener on unmount
-    return () => {
-      if (window.ethereum && window.ethereum.removeListener) {
-        window.ethereum.removeAllListeners('accountsChanged');
-        window.ethereum.removeAllListeners('chainChanged');
-      }
-    };
-  }, []);
-
-  const connect = async () => {
-    if (!window.ethereum) return toast.error("No Wallet Found");
-    const provider = new BrowserProvider(window.ethereum);
-    const signer = await provider.getSigner();
-    const addr = await signer.getAddress();
-    setAccount(addr);
-    refreshChainStats(addr, provider);
-    fetchDbRecord(addr);
-  };
-
-  const refreshChainStats = async (user: string, provider: any) => {
+  const refreshChainStats = async (user: string, provider: BrowserProvider) => {
     try {
       const registry = new Contract(SENTINEL_ADDRESSES.registry, SENTINEL_ABIS.registry, provider);
       const compliance = new Contract(SENTINEL_ADDRESSES.compliance, SENTINEL_ABIS.compliance, provider);
+      
       const [s_score, s_strikes, s_frozen] = await Promise.all([
-        registry.getScore(user), compliance.s_violationCount(user), compliance.isFrozen(user)
+        registry.getScore(user), 
+        compliance.s_violationCount(user), 
+        compliance.isFrozen(user)
       ]);
-      setScore(Number(s_score)); setStrikes(Number(s_strikes)); setIsFrozen(s_frozen);
-    } catch (e) { console.error(e); }
+      
+      setScore(Number(s_score)); 
+      setStrikes(Number(s_strikes)); 
+      setIsFrozen(s_frozen);
+    } catch (e) { 
+      console.error("Chain Stats Sync Failed:", e); 
+    }
   };
 
   const fetchDbRecord = async (wallet: string) => {
     const { data } = await supabase.from('restaurants').select('*').eq('wallet_address', wallet).maybeSingle();
     if (data) setDbRecord(data);
+    else setDbRecord(null);
   };
 
   const handleRegister = async () => {
     if (!formName || !formLocation) return toast.error("Details required");
+    if (!walletProvider) return;
+
     setLoading(true);
-    const toastId = toast.loading("Registering...");
+    const toastId = toast.loading("Registering Node...");
     try {
-      const provider = new BrowserProvider(window.ethereum);
+      const provider = new BrowserProvider(walletProvider as any);
       const signer = await provider.getSigner();
       
       const registry = new Contract(SENTINEL_ADDRESSES.registry, SENTINEL_ABIS.registry, signer);
       const tx = await registry.registerFranchise();
       await tx.wait();
       
-      await supabase.from('restaurants').upsert([{ wallet_address: account, name: formName, location: formLocation }]);
+      await supabase.from('restaurants').upsert([{ wallet_address: address, name: formName, location: formLocation }]);
+      
       toast.success("Franchise Live!", { id: toastId });
-      refreshChainStats(account!, provider);
-      fetchDbRecord(account!);
-    } catch (e) { toast.error("Failed", { id: toastId }); } finally { setLoading(false); }
+      refreshChainStats(address!, provider);
+      fetchDbRecord(address!);
+    } catch (e) { 
+      toast.error("Registration Failed", { id: toastId }); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const triggerIoT = async (isDanger: boolean) => {
+    if (!walletProvider || !address) return;
     setLoading(true);
     const toastId = toast.loading("Broadcasting Signal...");
     try {
-      const provider = new BrowserProvider(window.ethereum);
+      const provider = new BrowserProvider(walletProvider as any);
       const signer = await provider.getSigner();
       const adapter = new Contract(SENTINEL_ADDRESSES.iotAdapter, SENTINEL_ABIS.iotAdapter, signer);
-      const tx = await adapter.checkSensors(account, SENSOR_SOURCE_CODE, isDanger ? ["sensor-99"] : ["sensor-01"]);
+      
+      const tx = await adapter.checkSensors(address, SENSOR_SOURCE_CODE, isDanger ? ["sensor-99"] : ["sensor-01"]);
       await tx.wait();
+      
       toast.success("Signal Verified by Oracle", { id: toastId });
-    } catch (e) { toast.error("Signal Failed", { id: toastId }); } finally { setLoading(false); }
+      // Refresh stats after a brief delay to allow oracle callback to process
+      setTimeout(() => refreshChainStats(address, provider), 5000);
+    } catch (e) { 
+      toast.error("Signal Transmission Failed", { id: toastId }); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
-  if (!account) return (
+  // --- RENDER: DISCONNECTED STATE ---
+  if (!isConnected) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-200">
       <div className="text-center space-y-6">
         <div className="inline-block p-4 rounded-full bg-blue-500/10 ring-1 ring-blue-500/30">
           <Server className="w-12 h-12 text-blue-500" />
         </div>
-        <h1 className="text-3xl font-bold">Sentinel Dashboard</h1>
-        <button onClick={connect} className="bg-white text-slate-950 px-8 py-3 rounded-full font-bold hover:bg-slate-200 transition-all shadow-lg shadow-white/10">
-          Connect Admin Wallet
+        <h1 className="text-3xl font-bold font-mono tracking-tighter">Sentinel_Dashboard</h1>
+        <p className="text-slate-500 text-sm max-w-xs mx-auto">Establish a secure uplink to manage your franchise node.</p>
+        <button onClick={() => open()} className="bg-white text-slate-950 px-8 py-3 rounded-none font-mono text-xs font-bold hover:bg-red-500 hover:text-white transition-all shadow-lg uppercase tracking-widest">
+          Initialize_Uplink
         </button>
       </div>
     </div>
   );
 
+  // --- RENDER: REGISTRATION STATE ---
   if (score === 0) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4 text-slate-200">
-      <div className="bg-slate-900 p-8 rounded-3xl border border-slate-800 max-w-md w-full shadow-2xl">
+      <div className="bg-slate-900 p-8 rounded-3xl border border-slate-800 max-w-md w-full shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-blue-500"></div>
         <div className="text-center mb-8">
           <Building2 className="w-12 h-12 text-blue-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-white">Initialize Node</h2>
-          <p className="text-slate-400 text-sm mt-2">Register your franchise on the network.</p>
+          <h2 className="text-2xl font-bold text-white font-mono uppercase tracking-tighter">Initialize Node</h2>
+          <p className="text-slate-400 text-xs mt-2 uppercase tracking-widest">Registering Address: {address?.slice(0,6)}...{address?.slice(-4)}</p>
         </div>
         <div className="space-y-4">
-          <input className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white placeholder-slate-600 focus:border-blue-500 focus:outline-none" placeholder="Franchise Name" value={formName} onChange={e => setFormName(e.target.value)} />
-          <input className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white placeholder-slate-600 focus:border-blue-500 focus:outline-none" placeholder="Location" value={formLocation} onChange={e => setFormLocation(e.target.value)} />
-          <button onClick={handleRegister} disabled={loading} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-500 transition-colors">
-            {loading ? "Syncing..." : "Launch Node"}
+          <input className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white placeholder-slate-600 focus:border-blue-500 focus:outline-none transition-all" placeholder="Franchise Name" value={formName} onChange={e => setFormName(e.target.value)} />
+          <input className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white placeholder-slate-600 focus:border-blue-500 focus:outline-none transition-all" placeholder="Location" value={formLocation} onChange={e => setFormLocation(e.target.value)} />
+          <button onClick={handleRegister} disabled={loading} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-500 transition-all uppercase tracking-[0.2em] text-xs">
+            {loading ? "Syncing_Network..." : "Launch_Node"}
           </button>
+          <button onClick={() => open()} className="w-full text-slate-600 text-[10px] font-mono hover:text-red-400 transition-colors uppercase">Switch_Identity</button>
         </div>
       </div>
     </div>
   );
 
+  // --- RENDER: ACTIVE DASHBOARD ---
   return (
     <div className="min-h-screen bg-slate-950 scanline text-slate-200 p-6 md:p-12 font-sans selection:bg-blue-500/30">
-      <Toaster position="top-right" toastOptions={{ style: { background: '#1e293b', color: '#fff', border: '1px solid #334155' } }} />
+      <Toaster position="top-right" />
       
       <header className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
         <div>
@@ -156,9 +161,22 @@ export default function OwnerPage() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
             </span>
-            Connected: {account.slice(0,6)}...{account.slice(-4)}
+            UPLINK: {address?.slice(0,6)}...{address?.slice(-4)}
           </p>
         </div>
+        
+        {/* Reown Smart Button */}
+        <button 
+          onClick={() => open()}
+          className="group relative px-6 py-2 border border-slate-700 font-mono text-[10px] tracking-[0.3em] uppercase transition-all hover:border-red-500 hover:text-red-500"
+        >
+          <div className="flex items-center gap-2 group-hover:hidden">
+            <Zap className="w-3 h-3 text-blue-500" /> MANAGED_IDENTITY
+          </div>
+          <div className="hidden group-hover:flex items-center gap-2">
+            <LogOut className="w-3 h-3" /> TERMINATE_SESSION
+          </div>
+        </button>
       </header>
 
       {/* STATS GRID */}
@@ -182,8 +200,8 @@ export default function OwnerPage() {
           <div className={`text-4xl font-black mt-6 flex items-center gap-3 ${isFrozen ? 'text-red-500' : 'text-green-500'}`}>
             {isFrozen ? "🛑 REVOKED" : "✅ ACTIVE"}
           </div>
-          <div className="mt-4 text-xs font-mono opacity-60 text-slate-300">
-            {isFrozen ? "PROTOCOL HALTED" : "OPERATIONAL"}
+          <div className="mt-4 text-xs font-mono opacity-60 text-slate-300 uppercase tracking-widest">
+            {isFrozen ? "PROTOCOL_HALTED" : "OPERATIONAL"}
           </div>
         </div>
       </div>
@@ -196,15 +214,15 @@ export default function OwnerPage() {
             
             <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
               <div>
-                <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                <h3 className="text-xl font-bold text-white flex items-center gap-3 font-mono">
                   <Radio className="w-5 h-5 text-blue-500 animate-pulse" />
                   Sensor Simulation Uplink
                 </h3>
                 <p className="text-slate-500 text-sm mt-2 max-w-lg">
-                  Inject telemetry data into the Chainlink Oracle Network.
+                  Inject telemetry data into the Chainlink Oracle Network. Compliance logic is executed on-chain via Functions.
                 </p>
               </div>
-              <div className="bg-slate-900 px-3 py-1 rounded border border-slate-800 text-xs font-mono text-slate-400">
+              <div className="bg-slate-900 px-3 py-1 rounded border border-slate-800 text-[10px] font-mono text-blue-500 tracking-widest">
                 UPLINK_STATUS: READY
               </div>
             </div>
@@ -212,14 +230,14 @@ export default function OwnerPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <button onClick={() => triggerIoT(false)} disabled={loading} className="group relative bg-slate-900 hover:bg-slate-800 border border-slate-800 p-6 rounded-2xl text-left transition-all hover:border-green-500/30 overflow-hidden">
                 <div className="absolute top-0 left-0 w-1 h-full bg-green-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                <div className="text-green-400 font-bold mb-1 group-hover:text-green-300">Safe Telemetry</div>
-                <div className="text-xs text-slate-600 font-mono">PAYLOAD: TEMP_NORMAL (4°C)</div>
+                <div className="text-green-400 font-bold mb-1 group-hover:text-green-300 font-mono tracking-tighter">Safe Telemetry</div>
+                <div className="text-[10px] text-slate-600 font-mono uppercase">Payload: Temp_Normal (4°C)</div>
               </button>
               
               <button onClick={() => triggerIoT(true)} disabled={loading} className="group relative bg-slate-900 hover:bg-slate-800 border border-slate-800 p-6 rounded-2xl text-left transition-all hover:border-red-500/30 overflow-hidden">
                 <div className="absolute top-0 left-0 w-1 h-full bg-red-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                <div className="text-red-400 font-bold mb-1 group-hover:text-red-300">Hazard Telemetry</div>
-                <div className="text-xs text-slate-600 font-mono">PAYLOAD: TEMP_CRITICAL (50°C)</div>
+                <div className="text-red-400 font-bold mb-1 group-hover:text-red-300 font-mono tracking-tighter">Hazard Telemetry</div>
+                <div className="text-[10px] text-slate-600 font-mono uppercase">Payload: Temp_Critical (50°C)</div>
               </button>
             </div>
           </div>
