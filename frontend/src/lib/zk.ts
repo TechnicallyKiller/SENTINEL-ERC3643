@@ -17,8 +17,8 @@ export async function generateProof(
   // 1. Add a timestamp cache-buster to force Vercel to fetch the actual binary
   // This prevents the browser from using the cached HTML 404 page
   const cb = `?v=${Date.now()}`;
-  const wasmPath = `/zk/whistleblower.wasm${cb}`;
-  const zkeyPath = `/zk/whistleblower_final.zkey${cb}`;
+  const wasmPath = `/v2_zk/whistleblower.wasm${cb}`;
+  const zkeyPath = `/v2_zk/whistleblower_final.zkey${cb}`;
 
   try {
     // 2. Pre-flight check: Verify the WASM is actually binary before handing it to snarkjs
