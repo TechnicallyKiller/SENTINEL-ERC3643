@@ -1,5 +1,6 @@
 {
   "cleanUrls": true,
+  "trailingSlash": false,
   "rewrites": [
     {
       "source": "/v2_zk/:path*",
