@@ -3,7 +3,8 @@ import { EthersAdapter } from '@reown/appkit-adapter-ethers'
 import { baseSepolia } from '@reown/appkit/networks'
 
 // 1. Get projectId from https://cloud.reown.com
-const projectId = import.meta.env.REOWN_ID
+const projectId = import.meta.env.VITE_REOWN_PROJECT_ID
+
 
 
 // 2. Set up the networks
