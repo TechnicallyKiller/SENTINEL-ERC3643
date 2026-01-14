@@ -6,7 +6,7 @@
       "destination": "/v2_zk/:path*"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!v2_zk/).*)",
       "destination": "/index.html"
     }
   ]
